@@ -75,8 +75,13 @@ public class SubJson {
 
             for (; pos < len; pos++) {
                 ch = ch();
-                if (!(Character.isDigit(ch) || ch == '-' || ch == '.' || ch == 'e' || ch == 'E'))
-                    return;
+                if (ch >= 'a' && ch <= 'u')
+                    continue;
+                if (ch >= '-' && ch <= '9')
+                    continue;
+                if (ch == 'E')
+                    continue;
+                return;
             }
             throw new PathNotFoundException();
         }
