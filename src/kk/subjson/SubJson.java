@@ -4,22 +4,20 @@ import java.util.Optional;
 
 public class SubJson {
     private static class JsonTraverser {
-        private final String json;
+        private final char[] jsonChars;
         private final int len;
         private int pos = 0;
 
         JsonTraverser(String json) {
-            this.json = json;
+            this.jsonChars = json.toCharArray();
             this.len = json.length();
         }
 
         void goToField(String name) throws PathNotFoundException {
-            int nameLen = name.length();
             expectNext('{');
             while (true) {
                 expectNext('"');
-                if (json.regionMatches(pos, name, 0, nameLen)) {
-                    pos += nameLen;
+                if (nextMatches(name)) {
                     if (next() == '"') {
                         expectNext(':');
                         return;
@@ -30,6 +28,14 @@ public class SubJson {
                 skipSubJson();
                 expectNext(',');
             }
+        }
+
+        private boolean nextMatches(String name) throws PathNotFoundException {
+            int nameLen = name.length();
+            for (int i = 0; i < nameLen; i++)
+                if (next() != name.charAt(i))
+                    return false;
+            return true;
         }
 
         void goToArray(int idx) throws PathNotFoundException {
@@ -44,14 +50,14 @@ public class SubJson {
             skipWhiteSpaces();
             int start = pos;
             skipSubJson();
-            return json.substring(start, pos);
+            return new String(jsonChars, start, pos - start);
         }
 
         void skipSubJson() throws PathNotFoundException {
             skipWhiteSpaces();
             char ch = next();
             if (ch == '{' || ch == '[') {
-                char closing = ch == '{' ? '}' : ']';
+                char closing = (char) (ch + 2);
                 int openings = 0;
                 while (true) {
                     char next = next();
@@ -74,7 +80,7 @@ public class SubJson {
             }
 
             for (; pos < len; pos++) {
-                ch = ch();
+                ch = jsonChars[pos];
                 if (ch >= 'a' && ch <= 'u')
                     continue;
                 if (ch >= '-' && ch <= '9')
@@ -87,28 +93,23 @@ public class SubJson {
         }
 
         void skipWhiteSpaces() {
-            for (; pos < len; pos++)
-                if (!Character.isWhitespace(ch()))
+            while(pos < len)
+                if (!Character.isWhitespace(jsonChars[pos++])) {
+                    pos--;
                     return;
-        }
+                }
 
-        private char ch() {
-            return json.charAt(pos);
-        }
-
-        private char ch(int posOffset) {
-            return json.charAt(pos + posOffset);
         }
 
         private char next() throws PathNotFoundException {
             if (pos >= len)
                 throw new PathNotFoundException();
-            return json.charAt(pos++);
+            return jsonChars[pos++];
         }
 
         private void moveAfterClosingQuote() throws PathNotFoundException {
             while (true)
-                if (next() == '"' && ch(-2) != '\\')
+                if (next() == '"' && jsonChars[pos - 2] != '\\')
                     return;
         }
 
@@ -129,27 +130,23 @@ public class SubJson {
         try {
             while (pos < len) {
                 char subPathCh = path.charAt(pos);
-                if (subPathCh == '.') {
-                    pos++;
-                } else if (subPathCh == '[') {
-                    int start = pos;
-                    for (; pos < len; pos++) {
-                        char ch = path.charAt(pos);
-                        if (ch == ']') {
-                            jt.goToArray(Integer.parseInt(path.substring(start + 1, pos)));
-                            pos++;
-                            break;
-                        }
-                    }
-                } else {
-                    int start = pos;
-                    for (; pos < len; pos++) {
-                        char ch = path.charAt(pos);
-                        if (ch == '[' || ch == '.')
-                            break;
-                    }
-                    jt.goToField(path.substring(start, pos));
+                int start = pos;
+                pos++;
+                if (subPathCh == '.')
+                    continue;
+                if (subPathCh == '[') {
+                    int idx = path.indexOf(']', pos);
+                    jt.goToArray(Integer.parseInt(path.substring(pos, idx)));
+                    pos = idx + 1;
+                    continue;
                 }
+                for (; pos < len; pos++) {
+                    char ch = path.charAt(pos);
+                    if (ch == '[' || ch == '.')
+                        break;
+                }
+                jt.goToField(path.substring(start, pos));
+
             }
             return Optional.of(jt.get());
         } catch (PathNotFoundException e) {
